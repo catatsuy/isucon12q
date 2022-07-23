@@ -6,7 +6,6 @@ for HOST in isu01 isu02 isu03; do
 done
 
 # systemctl isuports
-
 for HOST in isu01 isu02 isu03; do
   rsync ${HOST}/etc/systemd/system/isuports.service ${HOST}:/tmp/isuports.service
 
@@ -14,6 +13,16 @@ for HOST in isu01 isu02 isu03; do
 sudo mv /tmp/isuports.service /etc/systemd/system/isuports.service
 sudo chown root. /etc/systemd/system/isuports.service
 sudo systemctl daemon-reload
+EOT
+
+# nginx.conf
+for HOST in isu01 isu02 isu03; do
+  rsync ${HOST}/etc/nginx/ ${HOST}:/tmp/nginx/
+
+ssh -T ${HOST} <<EOT
+  sudo rsync -av /tmp/nginx/ /etc/nginx/
+  sudo chown -R root. /etc/nginx
+  sudo systemctl reload nginx
 EOT
 
 done
