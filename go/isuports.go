@@ -1746,15 +1746,27 @@ func initializeHandler(c echo.Context) error {
 			if err != nil {
 				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
 			}
-			_, err = dbx.Exec("CREATE TABLE competition SELECT * FROM o_competition")
+			_, err = dbx.Exec("CREATE TABLE competition LIKE o_competition")
 			if err != nil {
 				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
 			}
-			_, err = dbx.Exec("CREATE TABLE player SELECT * FROM o_player")
+			_, err = dbx.Exec("CREATE TABLE player LIKE o_player")
 			if err != nil {
 				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
 			}
-			_, err = dbx.Exec("CREATE TABLE player_score SELECT * FROM o_player_score")
+			_, err = dbx.Exec("CREATE TABLE player_score LIKE o_player_score")
+			if err != nil {
+				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
+			}
+			_, err = dbx.Exec("INSERT INTO competition SELECT * FROM o_competition")
+			if err != nil {
+				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
+			}
+			_, err = dbx.Exec("INSERT INTO player SELECT * FROM o_player")
+			if err != nil {
+				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
+			}
+			_, err = dbx.Exec("INSERT INTO player_score SELECT * FROM o_player_score")
 			if err != nil {
 				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
 			}
