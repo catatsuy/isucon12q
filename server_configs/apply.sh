@@ -10,6 +10,7 @@ for HOST in isu01 isu02 isu03; do
   rsync -av ${HOST}/etc/systemd/system/isuports.service ${HOST}:/tmp/isuports.service
 
   ssh -T ${HOST} <<EOT
+sudo systemctl stop isuports
 sudo mv /tmp/isuports.service /etc/systemd/system/isuports.service
 sudo chown root. /etc/systemd/system/isuports.service
 sudo systemctl daemon-reload
