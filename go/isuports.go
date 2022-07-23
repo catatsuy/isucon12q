@@ -1746,15 +1746,15 @@ func initializeHandler(c echo.Context) error {
 			if err != nil {
 				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
 			}
-			_, err = dbx.Exec("CREATE TABLE competition LIKE o_competition")
+			_, err = dbx.Exec("CREATE TABLE competition SELECT * o_competition LIMIT 0")
 			if err != nil {
 				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
 			}
-			_, err = dbx.Exec("CREATE TABLE player LIKE o_player")
+			_, err = dbx.Exec("CREATE TABLE player SELECT * o_player LIMIT 0")
 			if err != nil {
 				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
 			}
-			_, err = dbx.Exec("CREATE TABLE player_score LIKE o_player_score")
+			_, err = dbx.Exec("CREATE TABLE player_score SELECT * FROM o_player_score LIMIT 0")
 			if err != nil {
 				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
 			}
@@ -1767,6 +1767,10 @@ func initializeHandler(c echo.Context) error {
 				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
 			}
 			_, err = dbx.Exec("INSERT INTO player_score SELECT * FROM o_player_score")
+			if err != nil {
+				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
+			}
+			_, err = dbx.Exec("ALTER TABLE `player_score` ADD INDEX `tenant_id_competition_id_player_id` (`tenant_id`, `competition_id`, `player_id`)")
 			if err != nil {
 				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
 			}
