@@ -75,9 +75,14 @@ func connectAdminDB() (*sqlx.DB, error) {
 }
 
 func connectTenantDB(tenantID int64) (*sqlx.DB, error) {
+	hostName := getEnv("ISUCON_DB_HOST", "127.0.0.1")
+	if tenantID%2 == 1 {
+		hostName = getEnv("ISUCON_DB_HOST2", "127.0.0.1")
+	}
+
 	config := mysql.NewConfig()
 	config.Net = "tcp"
-	config.Addr = getEnv("ISUCON_DB_HOST", "127.0.0.1") + ":" + getEnv("ISUCON_DB_PORT", "3306")
+	config.Addr = hostName + ":" + getEnv("ISUCON_DB_PORT", "3306")
 	config.User = getEnv("ISUCON_DB_USER", "isucon")
 	config.Passwd = getEnv("ISUCON_DB_PASSWORD", "isucon")
 	config.DBName = fmt.Sprintf("tenant_%d", tenantID)
@@ -1727,11 +1732,12 @@ func initializeHandler(c echo.Context) error {
 		dropTenantDBMySQL(t.ID)
 	}
 
-	ch := make(chan struct{}, 10)
+	wg := &sync.WaitGroup{}
 	for i := 1; i <= 100; i++ {
+		wg.Add(1)
 		go func(tID int64) {
 			defer func() {
-				<-ch
+				wg.Done()
 			}()
 			dbx, _ := connectTenantDB(tID)
 			_, err := dbx.Exec("DROP TABLE IF EXISTS competition")
@@ -1775,7 +1781,6 @@ func initializeHandler(c echo.Context) error {
 				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
 			}
 		}(int64(i))
-		ch <- struct{}{}
 	}
 
 	out, err := exec.Command(initializeScript).CombinedOutput()
@@ -1785,6 +1790,7 @@ func initializeHandler(c echo.Context) error {
 	res := InitializeHandlerResult{
 		Lang: "go",
 	}
+	wg.Wait()
 	<-exit
 	return c.JSON(http.StatusOK, SuccessResult{Status: true, Data: res})
 }
