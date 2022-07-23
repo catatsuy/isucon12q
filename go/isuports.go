@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -131,8 +132,14 @@ func SetCacheControlPrivate(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
+var isDev bool
+
 // Run は cmd/isuports/main.go から呼ばれるエントリーポイントです
 func Run() {
+	if os.Getenv("DEV") == "1" {
+		isDev = true
+	}
+
 	e := echo.New()
 	e.Debug = true
 	e.Logger.SetLevel(log.DEBUG)
@@ -153,6 +160,15 @@ func Run() {
 
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
+	if isDev {
+		e.Use(middleware.Static("../../public"))
+		g := e.Group("/auth")
+		proxyURL, err := url.Parse("http://localhost:3001")
+		if err != nil {
+			e.Logger.Fatal(err)
+		}
+		g.Use(middleware.Proxy(middleware.NewRoundRobinBalancer([]*middleware.ProxyTarget{{URL: proxyURL}})))
+	}
 	e.Use(SetCacheControlPrivate)
 
 	// SaaS管理者向けAPI
