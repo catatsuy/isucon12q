@@ -1746,11 +1746,11 @@ func initializeHandler(c echo.Context) error {
 			if err != nil {
 				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
 			}
-			_, err = dbx.Exec("CREATE TABLE competition SELECT * o_competition LIMIT 0")
+			_, err = dbx.Exec("CREATE TABLE competition SELECT * FROM o_competition LIMIT 0")
 			if err != nil {
 				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
 			}
-			_, err = dbx.Exec("CREATE TABLE player SELECT * o_player LIMIT 0")
+			_, err = dbx.Exec("CREATE TABLE player SELECT * FROM o_player LIMIT 0")
 			if err != nil {
 				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
 			}
