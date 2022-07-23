@@ -1708,7 +1708,7 @@ func initializeHandler(c echo.Context) error {
 		adminDB.SelectContext(
 			context.Background(),
 			&vhs,
-			"SELECT player_id, tenant_id, competition_id, MIN(created_at) AS min_created_at FROM visit_history GROUP BY player_id, tenant_id, competition_id",
+			"SELECT player_id, tenant_id, competition_id, min_created_at FROM visit_history_cache",
 		)
 
 		for _, v := range vhs {
@@ -1734,7 +1734,19 @@ func initializeHandler(c echo.Context) error {
 				<-ch
 			}()
 			dbx, _ := connectTenantDB(tID)
-			_, err := dbx.Exec("CREATE TABLE competition SELECT * FROM o_competition")
+			_, err := dbx.Exec("DROP TABLE IF EXISTS competition")
+			if err != nil {
+				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
+			}
+			_, err = dbx.Exec("DROP TABLE IF EXISTS player")
+			if err != nil {
+				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
+			}
+			_, err = dbx.Exec("DROP TABLE IF EXISTS player_score")
+			if err != nil {
+				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
+			}
+			_, err = dbx.Exec("CREATE TABLE competition SELECT * FROM o_competition")
 			if err != nil {
 				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
 			}
