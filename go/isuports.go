@@ -66,6 +66,7 @@ func connectAdminDB() (*sqlx.DB, error) {
 	config.User = getEnv("ISUCON_DB_USER", "isucon")
 	config.Passwd = getEnv("ISUCON_DB_PASSWORD", "isucon")
 	config.DBName = getEnv("ISUCON_DB_NAME", "isuports")
+	config.InterpolateParams = true
 	config.ParseTime = true
 	dsn := config.FormatDSN()
 	return sqlx.Open("mysql", dsn)
@@ -205,8 +206,28 @@ func Run() {
 		e.Logger.Fatalf("failed to connect db: %v", err)
 		return
 	}
-	adminDB.SetMaxOpenConns(10)
+	maxConns := os.Getenv("DB_MAXOPENCONNS")
+	maxConnsInt := 10
+	if maxConns != "" {
+		maxConnsInt, err = strconv.Atoi(maxConns)
+		if err != nil {
+			panic(err)
+		}
+	}
+	adminDB.SetMaxOpenConns(maxConnsInt)
+	adminDB.SetMaxIdleConns(maxConnsInt * 2)
+	adminDB.SetConnMaxIdleTime(time.Minute * 2)
 	defer adminDB.Close()
+
+	for {
+		err := adminDB.Ping()
+		// _, err := db.Exec("SELECT 42")
+		if err == nil {
+			break
+		}
+		e.Logger.Print(err)
+		time.Sleep(time.Second * 2)
+	}
 
 	port := getEnv("SERVER_APP_PORT", "3000")
 	e.Logger.Infof("starting isuports server on : %s ...", port)
