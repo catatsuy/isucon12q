@@ -76,7 +76,7 @@ func connectAdminDB() (*sqlx.DB, error) {
 
 func connectTenantDB(tenantID int64) (*sqlx.DB, error) {
 	hostName := getEnv("ISUCON_DB_HOST", "127.0.0.1")
-	if tenantID%2 == 1 {
+	if tenantID < 100 && tenantID%2 == 1 {
 		hostName = getEnv("ISUCON_DB_HOST2", "127.0.0.1")
 	}
 
