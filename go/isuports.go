@@ -77,7 +77,7 @@ func connectAdminDB() (*sqlx.DB, error) {
 func connectTenantDB(tenantID int64) (*sqlx.DB, error) {
 	hostName := getEnv("ISUCON_DB_HOST", "127.0.0.1")
 	if tenantID < 100 && tenantID%2 == 1 {
-		hostName = getEnv("ISUCON_DB_HOST2", "127.0.0.1")
+		hostName = getEnv("ISUCON_DB_HOST2", "192.168.0.13")
 	}
 
 	config := mysql.NewConfig()
@@ -1732,11 +1732,14 @@ func initializeHandler(c echo.Context) error {
 		dropTenantDBMySQL(t.ID)
 	}
 
+	ch := make(chan struct{}, 10)
 	wg := &sync.WaitGroup{}
 	for i := 1; i <= 100; i++ {
 		wg.Add(1)
+		ch <- struct{}{}
 		go func(tID int64) {
 			defer func() {
+				<-ch
 				wg.Done()
 			}()
 			dbx, _ := connectTenantDB(tID)
