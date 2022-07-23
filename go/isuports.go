@@ -1699,18 +1699,24 @@ func initializeHandler(c echo.Context) error {
 	mCacheVisitHistory = NewCacheVisitHistory()
 	atomic.StoreInt64(&dispenseIDint, 2678400000)
 	vhs := make([]VisitHistoryMinRow, 0, 201118)
-	adminDB.SelectContext(
-		context.Background(),
-		&vhs,
-		"SELECT player_id, tenant_id, competition_id, MIN(created_at) AS min_created_at FROM visit_history GROUP BY player_id, tenant_id, competition_id",
-	)
 
-	for _, v := range vhs {
-		mCacheVisitHistory.Set(v.TenantID, v.CompetitionID, v.PlayerID, v.MinCreatedAt)
-	}
+	exit := make(chan struct{})
+	go func() {
+		defer func() {
+			exit <- struct{}{}
+		}()
+		adminDB.SelectContext(
+			context.Background(),
+			&vhs,
+			"SELECT player_id, tenant_id, competition_id, MIN(created_at) AS min_created_at FROM visit_history GROUP BY player_id, tenant_id, competition_id",
+		)
+
+		for _, v := range vhs {
+			mCacheVisitHistory.Set(v.TenantID, v.CompetitionID, v.PlayerID, v.MinCreatedAt)
+		}
+	}()
 
 	ts := make([]TenantRow, 0, 20)
-
 	adminDB.SelectContext(
 		context.Background(),
 		&ts,
@@ -1721,6 +1727,29 @@ func initializeHandler(c echo.Context) error {
 		dropTenantDBMySQL(t.ID)
 	}
 
+	ch := make(chan struct{}, 10)
+	for i := 1; i <= 100; i++ {
+		go func(tID int64) {
+			defer func() {
+				<-ch
+			}()
+			dbx, _ := connectTenantDB(tID)
+			_, err := dbx.Exec("CREATE TABLE competition SELECT * FROM o_competition")
+			if err != nil {
+				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
+			}
+			_, err = dbx.Exec("CREATE TABLE player SELECT * FROM o_player")
+			if err != nil {
+				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
+			}
+			_, err = dbx.Exec("CREATE TABLE player_score SELECT * FROM o_player_score")
+			if err != nil {
+				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
+			}
+		}(int64(i))
+		ch <- struct{}{}
+	}
+
 	out, err := exec.Command(initializeScript).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("error exec.Command: %s %e", string(out), err)
@@ -1728,5 +1757,6 @@ func initializeHandler(c echo.Context) error {
 	res := InitializeHandlerResult{
 		Lang: "go",
 	}
+	<-exit
 	return c.JSON(http.StatusOK, SuccessResult{Status: true, Data: res})
 }
