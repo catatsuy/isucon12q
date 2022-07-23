@@ -14,6 +14,7 @@ sudo mv /tmp/isuports.service /etc/systemd/system/isuports.service
 sudo chown root. /etc/systemd/system/isuports.service
 sudo systemctl daemon-reload
 EOT
+done
 
 # nginx.conf
 for HOST in isu01 isu02 isu03; do
