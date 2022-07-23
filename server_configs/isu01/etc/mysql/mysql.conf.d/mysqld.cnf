@@ -28,8 +28,10 @@ user		= mysql
 #
 # Instead of skip-networking the default is now to listen only on
 # localhost which is more compatible and is not less secure.
-bind-address		= 127.0.0.1
-mysqlx-bind-address	= 127.0.0.1
+#bind-address		= 127.0.0.1
+#mysqlx-bind-address	= 127.0.0.1
+bind-address = 0.0.0.0
+
 #
 # * Fine Tuning
 #
@@ -83,7 +85,7 @@ skip_external_locking = ON
 default_storage_engine = InnoDB
 transaction_isolation = READ-COMMITTED
 
-innodb_buffer_pool_size = 2G
+innodb_buffer_pool_size = 2400M
 # innodb_data_file_path = ibdata1:10M:autoextend
 innodb_log_buffer_size = 16M
 innodb_log_file_size = 512M
