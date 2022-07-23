@@ -29,3 +29,14 @@ ssh -T ${HOST} <<EOT
 EOT
 
 done
+
+## my.cnf
+
+for HOST in isu01 isu02 isu03; do
+  rsync -av ${HOST}/etc/mysql/mysql.conf.d/mysqld.cnf ${HOST}:/tmp/mysqld.cnf
+  ssh -T ${HOST} <<EOT
+    sudo rsync -av /tmp/mysqld.cnf /etc/mysql/mysql.conf.d/mysqld.cnf
+    sudo chown -R root. /etc/mysql/mysql.conf.d/mysqld.cnf
+    sudo systemctl restart mysql.service
+EOT
+done
