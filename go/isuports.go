@@ -1467,6 +1467,20 @@ func competitionRankingHandler(c echo.Context) error {
 	); err != nil {
 		return fmt.Errorf("error Select player_score: tenantID=%d, competitionID=%s, %w", tenant.ID, competitionID, err)
 	}
+	if len(pss) == 0 {
+		res := SuccessResult{
+			Status: true,
+			Data: CompetitionRankingHandlerResult{
+				Competition: CompetitionDetail{
+					ID:         competition.ID,
+					Title:      competition.Title,
+					IsFinished: competition.FinishedAt.Valid,
+				},
+				Ranks: []CompetitionRank{},
+			},
+		}
+		return c.JSON(http.StatusOK, res)
+	}
 	ranks := make([]CompetitionRank, 0, len(pss))
 	scoredPlayerSet := make(map[string]struct{}, len(pss))
 	playerIDs := make([]string, 0, len(pss))
@@ -1478,7 +1492,7 @@ func competitionRankingHandler(c echo.Context) error {
 		return err
 	}
 	players := make([]PlayerRow, 0, len(playerIDs))
-	err = tenantDB.SelectContext(ctx, &players, query, args)
+	err = tenantDB.SelectContext(ctx, &players, query, args...)
 	if err != nil {
 		return err
 	}
