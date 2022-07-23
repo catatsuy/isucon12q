@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -561,6 +562,13 @@ type VisitHistorySummaryRow struct {
 	MinCreatedAt int64  `db:"min_created_at"`
 }
 
+type VisitHistoryMinRow struct {
+	PlayerID      string `db:"player_id"`
+	TenantID      int64  `db:"tenant_id"`
+	CompetitionID string `db:"competition_id"`
+	MinCreatedAt  int64  `db:"min_created_at"`
+}
+
 // 大会ごとの課金レポートを計算する
 func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID int64, competitonID string) (*BillingReport, error) {
 	comp, err := retrieveCompetition(ctx, tenantDB, competitonID)
@@ -569,23 +577,11 @@ func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID i
 	}
 
 	// ランキングにアクセスした参加者のIDを取得する
-	vhs := []VisitHistorySummaryRow{}
-	if err := adminDB.SelectContext(
-		ctx,
-		&vhs,
-		"SELECT player_id, MIN(created_at) AS min_created_at FROM visit_history WHERE tenant_id = ? AND competition_id = ? GROUP BY player_id",
-		tenantID,
-		comp.ID,
-	); err != nil && err != sql.ErrNoRows {
-		return nil, fmt.Errorf("error Select visit_history: tenantID=%d, competitionID=%s, %w", tenantID, comp.ID, err)
-	}
+	vhs, _ := mCacheVisitHistory.Get(tenantID, comp.ID)
+
 	billingMap := map[string]string{}
-	for _, vh := range vhs {
-		// competition.finished_atよりもあとの場合は、終了後に訪問したとみなして大会開催内アクセス済みとみなさない
-		if comp.FinishedAt.Valid && comp.FinishedAt.Int64 < vh.MinCreatedAt {
-			continue
-		}
-		billingMap[vh.PlayerID] = "visitor"
+	for _, pID := range vhs {
+		billingMap[pID] = "visitor"
 	}
 
 	// player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
@@ -1321,6 +1317,54 @@ type CompetitionRankingHandlerResult struct {
 	Ranks       []CompetitionRank `json:"ranks"`
 }
 
+type cacheVisitHistory struct {
+	// Setが多いならsync.Mutex
+	sync.RWMutex
+	items map[string]map[string]int64
+}
+
+func NewCacheVisitHistory() *cacheVisitHistory {
+	m := make(map[string]map[string]int64)
+	c := &cacheVisitHistory{
+		items: m,
+	}
+	return c
+}
+
+func (c *cacheVisitHistory) Set(tenantID int64, competitionID string, playerID string, updatedAt int64) {
+	key := fmt.Sprintf("%d_%s", tenantID, competitionID)
+	c.Lock()
+	defer c.Unlock()
+	_, ok := c.items[key]
+	if !ok {
+		c.items[key] = make(map[string]int64)
+	}
+	_, ok = c.items[key][playerID]
+	if ok {
+		// 最小値が欲しいのでもうあったら捨てる
+		return
+	}
+	c.items[key][playerID] = updatedAt
+}
+
+func (c *cacheVisitHistory) Get(tenantID int64, competitionID string) ([]string, bool) {
+	key := fmt.Sprintf("%d_%s", tenantID, competitionID)
+	c.RLock()
+	defer c.RUnlock()
+	v, ok := c.items[key]
+	if !ok {
+		return nil, false
+	}
+	// copyしないとlockが取れない
+	ret := make([]string, 0, len(v))
+	for k, _ := range v {
+		ret = append(ret, k)
+	}
+	return ret, true
+}
+
+var mCacheVisitHistory = NewCacheVisitHistory()
+
 // 参加者向けAPI
 // GET /api/player/competition/:competition_id/ranking
 // 大会ごとのランキングを取得する
@@ -1364,15 +1408,9 @@ func competitionRankingHandler(c echo.Context) error {
 		return fmt.Errorf("error Select tenant: id=%d, %w", v.tenantID, err)
 	}
 
-	if _, err := adminDB.ExecContext(
-		ctx,
-		"INSERT INTO visit_history (player_id, tenant_id, competition_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-		v.playerID, tenant.ID, competitionID, now, now,
-	); err != nil {
-		return fmt.Errorf(
-			"error Insert visit_history: playerID=%s, tenantID=%d, competitionID=%s, createdAt=%d, updatedAt=%d, %w",
-			v.playerID, tenant.ID, competitionID, now, now, err,
-		)
+	// ! competition.finished_atよりもあとの場合は、終了後に訪問したとみなして大会開催内アクセス済みとみなさない
+	if !(competition.FinishedAt.Valid && competition.FinishedAt.Int64 < now) {
+		mCacheVisitHistory.Set(tenant.ID, competitionID, v.playerID, now)
 	}
 
 	var rankAfter int64
@@ -1633,7 +1671,18 @@ type InitializeHandlerResult struct {
 // ベンチマーカーが起動したときに最初に呼ぶ
 // データベースの初期化などが実行されるため、スキーマを変更した場合などは適宜改変すること
 func initializeHandler(c echo.Context) error {
+	mCacheVisitHistory = NewCacheVisitHistory()
 	atomic.StoreInt64(&dispenseIDint, 2678400000)
+	vhs := make([]VisitHistoryMinRow, 0, 201118)
+	adminDB.SelectContext(
+		context.Background(),
+		&vhs,
+		"SELECT player_id, tenant_id, competition_id, MIN(created_at) AS min_created_at FROM visit_history GROUP BY player_id, tenant_id, competition_id",
+	)
+
+	for _, v := range vhs {
+		mCacheVisitHistory.Set(v.TenantID, v.CompetitionID, v.PlayerID, v.MinCreatedAt)
+	}
 
 	out, err := exec.Command(initializeScript).CombinedOutput()
 	if err != nil {
