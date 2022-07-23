@@ -9,6 +9,6 @@ WantedBy=multi-user.target
 Type=simple
 User=isucon
 Group=isucon
-WorkingDirectory=/home/isucon
+WorkingDirectory=/home/isucon/webapp/go
 ExecStart=/home/isucon/isuports
 Restart=always
