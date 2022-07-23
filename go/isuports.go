@@ -1671,6 +1671,7 @@ type InitializeHandlerResult struct {
 // ベンチマーカーが起動したときに最初に呼ぶ
 // データベースの初期化などが実行されるため、スキーマを変更した場合などは適宜改変すること
 func initializeHandler(c echo.Context) error {
+	mCacheVisitHistory = NewCacheVisitHistory()
 	atomic.StoreInt64(&dispenseIDint, 2678400000)
 	vhs := make([]VisitHistoryMinRow, 0, 201118)
 	adminDB.SelectContext(
