@@ -74,20 +74,45 @@ func connectAdminDB() (*sqlx.DB, error) {
 	return sqlx.Open("mysql", dsn)
 }
 
+func connectTenantDB(tenantID int64) (*sqlx.DB, error) {
+	config := mysql.NewConfig()
+	config.Net = "tcp"
+	config.Addr = getEnv("ISUCON_DB_HOST", "127.0.0.1") + ":" + getEnv("ISUCON_DB_PORT", "3306")
+	config.User = getEnv("ISUCON_DB_USER", "isucon")
+	config.Passwd = getEnv("ISUCON_DB_PASSWORD", "isucon")
+	config.DBName = fmt.Sprintf("tenant_%d", tenantID)
+	config.InterpolateParams = true
+	config.ParseTime = true
+	dsn := config.FormatDSN()
+	return sqlx.Open("mysql", dsn)
+}
+
+func createTenantDBMySQL(tenantID int64) error {
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("mysql -e 'create database tenant_%d'", tenantID))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to exec mysql out=%s: %w", string(out), err)
+	}
+
+	cmd = exec.Command("sh", "-c", fmt.Sprintf("mysql tenant_%d < ../sql/tenant/10_schema.sql", tenantID))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to exec mysql out=%s: %w", string(out), err)
+	}
+	return nil
+}
+
+func dropTenantDBMySQL(tenantID int64) error {
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("mysql -e 'drop database tenant_%d'", tenantID))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to exec mysql out=%s: %w", string(out), err)
+	}
+
+	return nil
+}
+
 // テナントDBのパスを返す
 func tenantDBPath(id int64) string {
 	tenantDBDir := getEnv("ISUCON_TENANT_DB_DIR", "../tenant_db")
 	return filepath.Join(tenantDBDir, fmt.Sprintf("%d.db", id))
-}
-
-// テナントDBに接続する
-func connectToTenantDB(id int64) (*sqlx.DB, error) {
-	p := tenantDBPath(id)
-	db, err := sqlx.Open(sqliteDriverName, fmt.Sprintf("file:%s?mode=rw", p))
-	if err != nil {
-		return nil, fmt.Errorf("failed to open tenant DB: %w", err)
-	}
-	return db, nil
 }
 
 // テナントDBを新規に作成する
@@ -516,8 +541,8 @@ func tenantsAddHandler(c echo.Context) error {
 	// NOTE: 先にadminDBに書き込まれることでこのAPIの処理中に
 	//       /api/admin/tenants/billingにアクセスされるとエラーになりそう
 	//       ロックなどで対処したほうが良さそう
-	if err := createTenantDB(id); err != nil {
-		return fmt.Errorf("error createTenantDB: id=%d name=%s %w", id, name, err)
+	if err := createTenantDBMySQL(id); err != nil {
+		return fmt.Errorf("error createTenantDBMySQL: id=%d name=%s %w", id, name, err)
 	}
 
 	res := TenantsAddHandlerResult{
@@ -692,9 +717,9 @@ func tenantsBillingHandler(c echo.Context) error {
 				Name:        t.Name,
 				DisplayName: t.DisplayName,
 			}
-			tenantDB, err := connectToTenantDB(t.ID)
+			tenantDB, err := connectTenantDB(t.ID)
 			if err != nil {
-				return fmt.Errorf("failed to connectToTenantDB: %w", err)
+				return fmt.Errorf("failed to connectTenantDB: %w", err)
 			}
 			defer tenantDB.Close()
 			cs := []CompetitionRow{}
@@ -753,9 +778,9 @@ func playersListHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "role organizer required")
 	}
 
-	tenantDB, err := connectToTenantDB(v.tenantID)
+	tenantDB, err := connectTenantDB(v.tenantID)
 	if err != nil {
-		return fmt.Errorf("error connectToTenantDB: %w", err)
+		return fmt.Errorf("error connectTenantDB: %w", err)
 	}
 	defer tenantDB.Close()
 
@@ -799,7 +824,7 @@ func playersAddHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "role organizer required")
 	}
 
-	tenantDB, err := connectToTenantDB(v.tenantID)
+	tenantDB, err := connectTenantDB(v.tenantID)
 	if err != nil {
 		return err
 	}
@@ -862,7 +887,7 @@ func playerDisqualifiedHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "role organizer required")
 	}
 
-	tenantDB, err := connectToTenantDB(v.tenantID)
+	tenantDB, err := connectTenantDB(v.tenantID)
 	if err != nil {
 		return err
 	}
@@ -922,7 +947,7 @@ func competitionsAddHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "role organizer required")
 	}
 
-	tenantDB, err := connectToTenantDB(v.tenantID)
+	tenantDB, err := connectTenantDB(v.tenantID)
 	if err != nil {
 		return err
 	}
@@ -968,7 +993,7 @@ func competitionFinishHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "role organizer required")
 	}
 
-	tenantDB, err := connectToTenantDB(v.tenantID)
+	tenantDB, err := connectTenantDB(v.tenantID)
 	if err != nil {
 		return err
 	}
@@ -1018,7 +1043,7 @@ func competitionScoreHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "role organizer required")
 	}
 
-	tenantDB, err := connectToTenantDB(v.tenantID)
+	tenantDB, err := connectTenantDB(v.tenantID)
 	if err != nil {
 		return err
 	}
@@ -1163,7 +1188,7 @@ func billingHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "role organizer required")
 	}
 
-	tenantDB, err := connectToTenantDB(v.tenantID)
+	tenantDB, err := connectTenantDB(v.tenantID)
 	if err != nil {
 		return err
 	}
@@ -1220,7 +1245,7 @@ func playerHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "role player required")
 	}
 
-	tenantDB, err := connectToTenantDB(v.tenantID)
+	tenantDB, err := connectTenantDB(v.tenantID)
 	if err != nil {
 		return err
 	}
@@ -1378,7 +1403,7 @@ func competitionRankingHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "role player required")
 	}
 
-	tenantDB, err := connectToTenantDB(v.tenantID)
+	tenantDB, err := connectTenantDB(v.tenantID)
 	if err != nil {
 		return err
 	}
@@ -1511,7 +1536,7 @@ func playerCompetitionsHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "role player required")
 	}
 
-	tenantDB, err := connectToTenantDB(v.tenantID)
+	tenantDB, err := connectTenantDB(v.tenantID)
 	if err != nil {
 		return err
 	}
@@ -1535,7 +1560,7 @@ func organizerCompetitionsHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "role organizer required")
 	}
 
-	tenantDB, err := connectToTenantDB(v.tenantID)
+	tenantDB, err := connectTenantDB(v.tenantID)
 	if err != nil {
 		return err
 	}
@@ -1626,9 +1651,9 @@ func meHandler(c echo.Context) error {
 		})
 	}
 
-	tenantDB, err := connectToTenantDB(v.tenantID)
+	tenantDB, err := connectTenantDB(v.tenantID)
 	if err != nil {
-		return fmt.Errorf("error connectToTenantDB: %w", err)
+		return fmt.Errorf("error connectTenantDB: %w", err)
 	}
 	ctx := context.Background()
 	p, err := retrievePlayer(ctx, tenantDB, v.playerID)
@@ -1674,14 +1699,67 @@ func initializeHandler(c echo.Context) error {
 	mCacheVisitHistory = NewCacheVisitHistory()
 	atomic.StoreInt64(&dispenseIDint, 2678400000)
 	vhs := make([]VisitHistoryMinRow, 0, 201118)
+
+	exit := make(chan struct{})
+	go func() {
+		defer func() {
+			exit <- struct{}{}
+		}()
+		adminDB.SelectContext(
+			context.Background(),
+			&vhs,
+			"SELECT player_id, tenant_id, competition_id, min_created_at FROM visit_history_cache",
+		)
+
+		for _, v := range vhs {
+			mCacheVisitHistory.Set(v.TenantID, v.CompetitionID, v.PlayerID, v.MinCreatedAt)
+		}
+	}()
+
+	ts := make([]TenantRow, 0, 20)
 	adminDB.SelectContext(
 		context.Background(),
-		&vhs,
-		"SELECT player_id, tenant_id, competition_id, MIN(created_at) AS min_created_at FROM visit_history GROUP BY player_id, tenant_id, competition_id",
+		&ts,
+		"SELECT * FROM tenant WHERE id > 100",
 	)
 
-	for _, v := range vhs {
-		mCacheVisitHistory.Set(v.TenantID, v.CompetitionID, v.PlayerID, v.MinCreatedAt)
+	for _, t := range ts {
+		dropTenantDBMySQL(t.ID)
+	}
+
+	ch := make(chan struct{}, 10)
+	for i := 1; i <= 100; i++ {
+		go func(tID int64) {
+			defer func() {
+				<-ch
+			}()
+			dbx, _ := connectTenantDB(tID)
+			_, err := dbx.Exec("DROP TABLE IF EXISTS competition")
+			if err != nil {
+				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
+			}
+			_, err = dbx.Exec("DROP TABLE IF EXISTS player")
+			if err != nil {
+				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
+			}
+			_, err = dbx.Exec("DROP TABLE IF EXISTS player_score")
+			if err != nil {
+				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
+			}
+			_, err = dbx.Exec("CREATE TABLE competition SELECT * FROM o_competition")
+			if err != nil {
+				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
+			}
+			_, err = dbx.Exec("CREATE TABLE player SELECT * FROM o_player")
+			if err != nil {
+				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
+			}
+			_, err = dbx.Exec("CREATE TABLE player_score SELECT * FROM o_player_score")
+			if err != nil {
+				c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
+			}
+		}(int64(i))
+		ch <- struct{}{}
 	}
 
 	out, err := exec.Command(initializeScript).CombinedOutput()
@@ -1691,5 +1769,6 @@ func initializeHandler(c echo.Context) error {
 	res := InitializeHandlerResult{
 		Lang: "go",
 	}
+	<-exit
 	return c.JSON(http.StatusOK, SuccessResult{Status: true, Data: res})
 }
